@@ -1,0 +1,5 @@
+.orchestra/
+.superpowers/
+docs/superpowers/
+node_modules/
+*.log

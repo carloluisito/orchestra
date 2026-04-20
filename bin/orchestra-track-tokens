@@ -1,0 +1,217 @@
+#!/usr/bin/env node
+// Orchestra Token Tracker — PostToolUse hook for Agent calls
+// Automatically captures token usage from Agent tool results and writes to .orchestra/token-usage.json
+// Runs silently if .orchestra/ doesn't exist (not an Orchestra run)
+
+const fs = require('fs');
+const path = require('path');
+
+const TOKEN_FILE = path.join(process.cwd(), '.orchestra', 'token-usage.json');
+const ORCHESTRA_DIR = path.join(process.cwd(), '.orchestra');
+
+// Exit silently if not an Orchestra run
+if (!fs.existsSync(ORCHESTRA_DIR) || !fs.existsSync(TOKEN_FILE)) {
+  process.exit(0);
+}
+
+// Read hook input from stdin
+let input = '';
+process.stdin.setEncoding('utf-8');
+process.stdin.on('data', chunk => { input += chunk; });
+process.stdin.on('end', () => {
+  try {
+    const hookData = JSON.parse(input);
+
+    // Only process Agent tool calls
+    if (hookData.tool_name !== 'Agent') {
+      process.exit(0);
+    }
+
+    const toolInput = hookData.tool_input || {};
+    const toolResponse = hookData.tool_response || {};
+
+    // Extract description to find Orchestra task ID
+    const description = toolInput.description || '';
+
+    // Match Orchestra task patterns: "Orchestra task 001: ...", "T001 ...", "Implement Task 1: ..."
+    const taskIdMatch = description.match(/(?:Orchestra\s+task\s+|^T|task\s+)(\d+)/i) ||
+                        description.match(/T(\d{3})/i) ||
+                        description.match(/task\s+(\d+)/i);
+
+    if (!taskIdMatch) {
+      // Not an Orchestra task dispatch — could be a review agent, etc.
+      // Still useful to track if we can find a task ID
+      process.exit(0);
+    }
+
+    const rawTaskNum = Number(taskIdMatch[1]);
+    const taskId = String(rawTaskNum).padStart(3, '0');
+
+    // Also check with T-prefix for matching existing entries
+    const taskIdVariants = [taskId, 'T' + taskId, String(rawTaskNum)];
+
+    // Skip async-launched agents — they don't have completion data yet
+    // Only process completed agents with actual usage data
+    if (typeof toolResponse === 'object' && toolResponse.status === 'async_launched') {
+      process.exit(0);
+    }
+
+    let totalTokens = 0;
+    let toolUses = 0;
+    let durationMs = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    // Primary: structured data from completed Agent responses
+    if (typeof toolResponse === 'object' && toolResponse.totalTokens) {
+      totalTokens = Number(toolResponse.totalTokens);
+      toolUses = Number(toolResponse.totalToolUseCount || 0);
+      durationMs = Number(toolResponse.totalDurationMs || 0);
+
+      // Detailed usage breakdown if available
+      if (toolResponse.usage) {
+        const u = toolResponse.usage;
+        inputTokens = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+        outputTokens = u.output_tokens || 0;
+      }
+    }
+
+    if (totalTokens === 0) {
+      // No token data found — can't track
+      process.exit(0);
+    }
+
+    // Read existing token-usage.json
+    let tokenData;
+    try {
+      tokenData = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf-8'));
+    } catch (e) {
+      tokenData = {
+        run_total: { input_tokens: 0, output_tokens: 0, total_tokens: 0, total_budget: 0 },
+        tasks: {}
+      };
+    }
+
+    // Find the task file to get title and budget
+    const tasksDir = path.join(ORCHESTRA_DIR, 'tasks');
+    let taskTitle = 'Task ' + taskId;
+    let taskBudget = 80000; // default
+
+    if (fs.existsSync(tasksDir)) {
+      const taskFiles = fs.readdirSync(tasksDir).filter(f => f.endsWith('.md'));
+      for (const f of taskFiles) {
+        const content = fs.readFileSync(path.join(tasksDir, f), 'utf-8');
+        // Check if this file's id matches
+        const idMatch = content.match(/^id:\s*"?T?0*(\d+)"?\s*$/m);
+        if (idMatch && String(Number(idMatch[1])).padStart(3, '0') === taskId) {
+          const titleMatch = content.match(/^title:\s*"?(.+?)"?\s*$/m);
+          const budgetMatch = content.match(/^token_budget:\s*"?(\d+)"?\s*$/m);
+          if (titleMatch) taskTitle = titleMatch[1];
+          if (budgetMatch) taskBudget = Number(budgetMatch[1]);
+          break;
+        }
+      }
+    }
+
+    // Use real input/output if available from structured usage, otherwise estimate
+    if (inputTokens === 0 && outputTokens === 0) {
+      inputTokens = Math.round(totalTokens * 0.6);
+      outputTokens = totalTokens - inputTokens;
+    }
+
+    // Find existing entry key (might be "001", "T001", etc.)
+    let entryKey = taskId;
+    for (const variant of taskIdVariants) {
+      if (tokenData.tasks[variant]) {
+        entryKey = variant;
+        break;
+      }
+    }
+
+    // Update task entry
+    const existingTask = tokenData.tasks[entryKey] || {};
+    tokenData.tasks[entryKey] = {
+      title: taskTitle,
+      budget: taskBudget,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      total_tokens: totalTokens,
+      budget_used_pct: Math.round((totalTokens / taskBudget) * 1000) / 10,
+      retries: (existingTask.retries || 0) + (existingTask.total_tokens ? 1 : 0),
+      duration_ms: durationMs,
+      tool_uses: toolUses
+    };
+
+    // Recalculate run totals
+    let totalInput = 0, totalOutput = 0, totalAll = 0, totalBudget = 0;
+    for (const tid of Object.keys(tokenData.tasks)) {
+      const t = tokenData.tasks[tid];
+      totalInput += t.input_tokens || 0;
+      totalOutput += t.output_tokens || 0;
+      totalAll += t.total_tokens || 0;
+      totalBudget += t.budget || 0;
+    }
+    tokenData.run_total = {
+      input_tokens: totalInput,
+      output_tokens: totalOutput,
+      total_tokens: totalAll,
+      total_budget: totalBudget
+    };
+
+    // ========== Adaptive Calibration ==========
+    // Rolling average of actual/budget ratio across last 5 tasks
+    if (!tokenData.calibration) {
+      tokenData.calibration = { ratio: 1.0, sample_size: 0, recent_tasks: [] };
+    }
+
+    // Push this task's ratio onto the recent window
+    const taskRatio = Math.round((totalTokens / taskBudget) * 100) / 100;
+    tokenData.calibration.recent_tasks.push({
+      id: entryKey,
+      budget: taskBudget,
+      actual: totalTokens,
+      ratio: taskRatio
+    });
+
+    // Keep only last 5
+    while (tokenData.calibration.recent_tasks.length > 5) {
+      tokenData.calibration.recent_tasks.shift();
+    }
+
+    // Recalculate ratio: sum(actual) / sum(budget) across window
+    const calTasks = tokenData.calibration.recent_tasks;
+    const sumActual = calTasks.reduce((s, t) => s + t.actual, 0);
+    const sumBudget = calTasks.reduce((s, t) => s + t.budget, 0);
+    tokenData.calibration.ratio = sumBudget > 0 ? Math.round((sumActual / sumBudget) * 100) / 100 : 1.0;
+    tokenData.calibration.sample_size = calTasks.length;
+
+    // Floor at 1.0 — never shrink below original budget
+    if (tokenData.calibration.ratio < 1.0) tokenData.calibration.ratio = 1.0;
+
+    // Write back
+    fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokenData, null, 2) + '\n');
+
+    // Build context message
+    const pctUsed = Math.round((totalTokens / taskBudget) * 100);
+    let contextMsg = 'Token usage recorded for task T' + taskId + ': ' + totalTokens + ' tokens (' + pctUsed + '% of budget).';
+    if (tokenData.calibration.ratio > 1.0) {
+      contextMsg += ' Calibration ratio: ' + tokenData.calibration.ratio + 'x (effective budgets auto-adjusted for remaining tasks).';
+    }
+    if (tokenData.calibration.ratio >= 2.0 && tokenData.calibration.sample_size >= 3) {
+      contextMsg += ' ⚠ Tasks averaging ' + tokenData.calibration.ratio + 'x over budget.';
+    }
+
+    // Output context for the model
+    const output = {
+      hookSpecificOutput: {
+        hookEventName: 'PostToolUse',
+        additionalContext: contextMsg
+      }
+    };
+    console.log(JSON.stringify(output));
+
+  } catch (err) {
+    // Silent failure — don't break the workflow
+    process.exit(0);
+  }
+});

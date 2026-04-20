@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/orchestra-track-tokens\"",
+            "timeout": 10,
+            "statusMessage": "Tracking token usage..."
+          }
+        ]
+      }
+    ]
+  }
+}

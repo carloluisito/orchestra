@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orchestra Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    background: #0d1117;
+    color: #e6edf3;
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ===== Header Bar ===== */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 56px;
+    padding: 0 24px;
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-left {
+    font-size: 15px;
+    font-weight: 700;
+    color: #a78bfa;
+  }
+  .header-center {
+    text-align: center;
+  }
+  .header-center-project {
+    font-size: 15px;
+    font-weight: 600;
+    color: #e6edf3;
+  }
+  .header-center-sub {
+    font-size: 11px;
+    color: #8b949e;
+  }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #8b949e;
+  }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ef4444;
+    transition: background 0.3s, box-shadow 0.3s;
+    flex-shrink: 0;
+  }
+  .status-dot.connected {
+    background: #4ade80;
+    box-shadow: 0 0 6px #4ade80;
+  }
+
+  /* ===== 3-Column Grid ===== */
+  .grid {
+    display: grid;
+    grid-template-columns: 300px 1fr 320px;
+    gap: 16px;
+    padding: 16px;
+    min-width: 1024px;
+  }
+  .left-col, .right-col {
+    position: sticky;
+    top: 72px; /* 56px header + 16px padding */
+    align-self: start;
+    max-height: calc(100vh - 88px); /* viewport - header - padding */
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #30363d #161b22;
+  }
+  .left-col::-webkit-scrollbar, .right-col::-webkit-scrollbar { width: 6px; }
+  .left-col::-webkit-scrollbar-track, .right-col::-webkit-scrollbar-track { background: #161b22; }
+  .left-col::-webkit-scrollbar-thumb, .right-col::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+  /* ===== Panel ===== */
+  .panel {
+    background: #161b22;
+    border-radius: 8px;
+    border: 1px solid #30363d;
+    padding: 16px;
+  }
+  .panel-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 12px;
+  }
+
+  /* ===== Run Summary ===== */
+  .run-big-number {
+    font-size: 28px;
+    font-weight: 700;
+    color: #e6edf3;
+  }
+  .run-big-sub {
+    font-size: 12px;
+    color: #8b949e;
+    margin-bottom: 12px;
+  }
+  .progress-bar-wrap {
+    height: 6px;
+    background: #21262d;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: #4ade80;
+    border-radius: 3px;
+    transition: width 600ms ease-out;
+    width: 0%;
+  }
+  .progress-pct {
+    font-size: 12px;
+    color: #8b949e;
+    text-align: right;
+    margin-top: 4px;
+    margin-bottom: 12px;
+  }
+  .wave-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .wave-indicator-text {
+    font-size: 13px;
+    color: #e6edf3;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .badge-running {
+    background: rgba(167,139,250,0.15);
+    color: #a78bfa;
+    border: 1px solid rgba(167,139,250,0.3);
+  }
+  .badge-complete {
+    background: rgba(74,222,128,0.1);
+    color: #4ade80;
+  }
+  .badge-pending {
+    background: rgba(139,148,158,0.1);
+    color: #8b949e;
+  }
+  .failure-count {
+    font-size: 13px;
+    color: #8b949e;
+    margin-top: 4px;
+  }
+  .failure-count.has-failures {
+    color: #ef4444;
+    font-weight: 600;
+  }
+
+  /* ===== Activity Log ===== */
+  .activity-panel {
+    margin-top: 12px;
+  }
+  .activity-scroll {
+    max-height: calc(100vh - 340px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #30363d #161b22;
+  }
+  .activity-scroll::-webkit-scrollbar { width: 6px; }
+  .activity-scroll::-webkit-scrollbar-track { background: #161b22; }
+  .activity-scroll::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+  .activity-entry {
+    display: flex;
+    gap: 10px;
+    padding: 5px 0;
+    border-bottom: 1px solid #21262d;
+    animation: fadeInSlide 300ms ease-out;
+  }
+  .activity-time {
+    font-size: 11px;
+    color: #8b949e;
+    white-space: nowrap;
+    min-width: 36px;
+  }
+  .activity-text {
+    font-size: 12px;
+    color: #c9d1d9;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  /* ===== DAG Center Column ===== */
+  .dag-panel {
+    padding: 20px;
+  }
+  .wave-section {
+    margin-bottom: 20px;
+  }
+  .wave-section:last-child {
+    margin-bottom: 0;
+  }
+  .wave-section.collapsed .task-row {
+    display: none;
+  }
+  .wave-header {
+    cursor: pointer;
+  }
+  .wave-header:hover {
+    opacity: 0.8;
+  }
+  .wave-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .wave-line {
+    flex: 1;
+    height: 1px;
+  }
+  .wave-line-complete { background: #30363d; }
+  .wave-line-running { background: linear-gradient(90deg, #a78bfa44, #a78bfa); }
+  .wave-line-pending { background: #21262d; }
+  .wave-label {
+    font-size: 11px;
+    color: #8b949e;
+    white-space: nowrap;
+  }
+  .task-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  /* ===== Task Cards ===== */
+  .task-card {
+    min-width: 160px;
+    max-width: 220px;
+    flex: 1 1 160px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1.5px solid;
+    position: relative;
+  }
+  .task-card-id {
+    font-size: 10px;
+    font-weight: 600;
+    color: #8b949e;
+    letter-spacing: 0.05em;
+  }
+  .task-card-icon {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    font-size: 14px;
+  }
+  .task-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e6edf3;
+    margin-top: 3px;
+  }
+  .task-card-divider {
+    margin: 8px 0;
+  }
+  .task-card-deps {
+    font-size: 11px;
+    color: #8b949e;
+  }
+
+  /* Task card status variants */
+  .task-card.done {
+    background: #0d1117;
+    border-color: #238636;
+    opacity: 0.7;
+  }
+  .task-card.done .task-card-icon { color: #4ade80; }
+  .task-card.done .task-card-divider { border-top: 1px solid rgba(35,134,54,0.2); }
+
+  .task-card.running {
+    background: rgba(139,92,246,0.08);
+    border-color: #a78bfa;
+    animation: runningPulse 2s infinite;
+  }
+  .task-card.running .task-card-icon { color: #a78bfa; }
+  .task-card.running .task-card-divider { border-top: 1px solid rgba(167,139,250,0.2); }
+  .task-card.running .accent-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #a78bfa;
+    border-radius: 8px 0 0 8px;
+  }
+
+  .task-card.ready {
+    background: rgba(56,139,253,0.08);
+    border-color: #388bfd;
+  }
+  .task-card.ready .task-card-icon { color: #58a6ff; }
+  .task-card.ready .task-card-divider { border-top: 1px solid rgba(56,139,253,0.2); }
+
+  .task-card.pending {
+    background: #0d1117;
+    border-color: #21262d;
+  }
+  .task-card.pending .task-card-icon { color: #484f58; }
+  .task-card.pending .task-card-divider { border-top: 1px solid rgba(33,38,45,0.2); }
+
+  .task-card.failed {
+    background: rgba(248,81,73,0.08);
+    border-color: #f85149;
+    animation: failedPulse 2s infinite;
+  }
+  .task-card.failed .task-card-icon { color: #ef4444; }
+  .task-card.failed .task-card-divider { border-top: 1px solid rgba(248,81,73,0.2); }
+
+  /* ===== Token Budget (Right Column) ===== */
+  .token-io-row {
+    margin-bottom: 12px;
+  }
+  .token-io-label {
+    font-size: 11px;
+    color: #8b949e;
+  }
+  .token-io-value {
+    font-size: 20px;
+    font-weight: 600;
+    color: #e6edf3;
+  }
+  .token-total {
+    font-size: 13px;
+    color: #8b949e;
+    margin-top: 12px;
+    margin-bottom: 8px;
+  }
+  .budget-bar-wrap {
+    height: 10px;
+    background: #21262d;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .budget-bar-fill {
+    height: 100%;
+    border-radius: 5px;
+    transition: width 600ms ease-out;
+  }
+  .budget-pct {
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  .budget-exceeded {
+    font-size: 12px;
+    color: #ef4444;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+
+  /* ===== Per-Task Token Panel ===== */
+  .per-task-panel {
+    margin-top: 12px;
+  }
+  .per-task-scroll {
+    max-height: calc(100vh - 420px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #30363d #161b22;
+  }
+  .per-task-scroll::-webkit-scrollbar { width: 6px; }
+  .per-task-scroll::-webkit-scrollbar-track { background: #161b22; }
+  .per-task-scroll::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+  .per-task-row {
+    padding: 10px 0;
+    border-bottom: 1px solid #21262d;
+  }
+  .per-task-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .per-task-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #e6edf3;
+  }
+  .per-task-pct {
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .per-task-meta {
+    font-size: 11px;
+    color: #8b949e;
+    margin-top: 2px;
+  }
+  .per-task-bar-wrap {
+    height: 4px;
+    background: #21262d;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+  .per-task-bar-fill {
+    display: block;
+    height: 4px;
+    border-radius: 2px;
+    transition: width 600ms ease-out;
+  }
+  .retry-badge {
+    font-size: 10px;
+    color: #fbbf24;
+    margin-left: 4px;
+  }
+
+  /* ===== Colors ===== */
+  .color-green { color: #4ade80; }
+  .color-yellow { color: #fbbf24; }
+  .color-orange { color: #f97316; }
+  .color-red { color: #ef4444; }
+  .bg-green { background: #4ade80; }
+  .bg-yellow { background: #fbbf24; }
+  .bg-orange { background: #f97316; }
+  .bg-red { background: #ef4444; }
+
+  /* ===== Animations ===== */
+  @keyframes runningPulse {
+    0% { box-shadow: 0 0 0 0 rgba(167,139,250,0.45); }
+    70% { box-shadow: 0 0 0 8px rgba(167,139,250,0); }
+    100% { box-shadow: 0 0 0 0 rgba(167,139,250,0); }
+  }
+  @keyframes failedPulse {
+    0% { box-shadow: 0 0 0 0 rgba(248,81,73,0.5); }
+    70% { box-shadow: 0 0 0 8px rgba(248,81,73,0); }
+    100% { box-shadow: 0 0 0 0 rgba(248,81,73,0); }
+  }
+  @keyframes fadeInSlide {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  /* ===== Empty state ===== */
+  .empty-state {
+    color: #484f58;
+    font-size: 13px;
+    text-align: center;
+    padding: 24px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header Bar -->
+<div class="header">
+  <div class="header-left">&#9670; ORCHESTRA</div>
+  <div class="header-center">
+    <div class="header-center-project" id="hdr-project">--</div>
+    <div class="header-center-sub" id="hdr-sub">--</div>
+  </div>
+  <div class="header-right">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-label">DISCONNECTED</span>
+    <span id="uptime-label"></span>
+  </div>
+</div>
+
+<!-- 3-Column Grid -->
+<div class="grid">
+
+  <!-- ===== Left Column ===== -->
+  <div class="left-col">
+
+    <!-- Run Summary -->
+    <div class="panel" id="run-summary">
+      <div class="panel-label">RUN SUMMARY</div>
+      <div class="run-big-number" id="run-big">0 / 0</div>
+      <div class="run-big-sub">tasks complete</div>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-fill" id="run-bar"></div>
+      </div>
+      <div class="progress-pct" id="run-pct">0%</div>
+      <div class="wave-indicator">
+        <span class="wave-indicator-text" id="wave-text">Wave -- of --</span>
+        <span class="badge badge-pending" id="wave-badge">--</span>
+      </div>
+      <div class="failure-count" id="failure-count">0 failed</div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="panel activity-panel">
+      <div class="panel-label">ACTIVITY</div>
+      <div class="activity-scroll" id="activity-log">
+        <div class="empty-state">No events yet</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===== Center Column ===== -->
+  <div class="center-col">
+    <div class="panel dag-panel">
+      <div class="panel-label">EXECUTION DAG</div>
+      <div id="dag-container">
+        <div class="empty-state">Waiting for data...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Right Column ===== -->
+  <div class="right-col">
+
+    <!-- Token Budget -->
+    <div class="panel">
+      <div class="panel-label">TOKEN BUDGET</div>
+      <div class="token-io-row">
+        <div class="token-io-item">
+          <div class="token-io-label">TOTAL USED</div>
+          <div class="token-io-value" id="tok-used">0</div>
+        </div>
+      </div>
+      <div class="token-total" id="tok-total">0 / 0 tokens</div>
+      <div class="budget-bar-wrap">
+        <div class="budget-bar-fill" id="budget-bar" style="width:0%"></div>
+      </div>
+      <div class="budget-pct" id="budget-pct">0%</div>
+      <div class="budget-exceeded" id="budget-warn" style="display:none">&#9888; Budget exceeded</div>
+    </div>
+
+    <!-- Per-Task Tokens -->
+    <div class="panel per-task-panel">
+      <div class="panel-label">PER-TASK TOKENS</div>
+      <div class="per-task-scroll" id="per-task-list"></div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ===== Helpers =====
+
+  function fmt(n) {
+    if (n == null || isNaN(n)) return '0';
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 10000) return Math.round(n / 1000) + 'k';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+    return String(n);
+  }
+
+  function fmtComma(n) {
+    if (n == null || isNaN(n)) return '0';
+    return Number(n).toLocaleString('en-US');
+  }
+
+  function fmtAbbrev(n) {
+    if (n == null || isNaN(n)) return '0';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
+
+  function barColor(pct) {
+    if (pct >= 100) return 'red';
+    if (pct >= 85) return 'orange';
+    if (pct >= 60) return 'yellow';
+    return 'green';
+  }
+
+  function taskIcon(status) {
+    switch (status) {
+      case 'done':    return '\u2713';
+      case 'running': return '\u25B6';
+      case 'ready':   return '\u25C9';
+      case 'pending': return '\u25CB';
+      case 'failed':  return '\u2715';
+      default:        return '\u25CB';
+    }
+  }
+
+  function elapsed(ms) {
+    if (ms == null || ms < 0) return '0s';
+    var totalSec = Math.floor(ms / 1000);
+    if (totalSec < 60) return totalSec + 's';
+    var min = Math.floor(totalSec / 60);
+    var sec = totalSec % 60;
+    if (min < 60) return min + 'm ' + sec + 's';
+    var hr = Math.floor(min / 60);
+    var remMin = min % 60;
+    return hr + 'h ' + remMin + 'm';
+  }
+
+  function displayId(id) {
+    var s = String(id).replace(/^[Tt]/, '');
+    return 'T' + s;
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function fmtDuration(ms) {
+    if (ms == null || ms < 0) return '0s';
+    var totalSec = Math.floor(ms / 1000);
+    if (totalSec < 60) return totalSec + 's';
+    var min = Math.floor(totalSec / 60);
+    var sec = totalSec % 60;
+    return min + 'm ' + sec + 's';
+  }
+
+  // ===== Uptime Timer =====
+
+  var serverUptimeBaseline = 0;
+  var clientTimeBaseline = 0;
+  var uptimeInterval = null;
+
+  function startUptimeTimer() {
+    if (uptimeInterval) clearInterval(uptimeInterval);
+    uptimeInterval = setInterval(function() {
+      var now = Date.now();
+      var currentUptime = serverUptimeBaseline + (now - clientTimeBaseline);
+      var totalSec = Math.floor(currentUptime / 1000);
+      var m = Math.floor(totalSec / 60);
+      var s = totalSec % 60;
+      document.getElementById('uptime-label').textContent = m + 'm ' + s + 's up';
+    }, 1000);
+  }
+
+  // ===== Previous history length for prepend detection =====
+  var prevHistoryLen = 0;
+
+  // ===== Render =====
+
+  function render(state) {
+    if (!state) return;
+
+    var config = state.config || {};
+    var dag = state.dag || {};
+    var tasks = state.tasks || [];
+    var tokens = state.tokens || {};
+    var history = state.history || [];
+    var conn = state.connection || {};
+    var runTotal = tokens.run_total || {};
+    var tokenTasks = tokens.tasks || {};
+
+    // --- Header ---
+    document.getElementById('hdr-project').textContent = config.project || '--';
+    var parts = [];
+    if (config.status) parts.push(config.status);
+    if (config.autonomy) parts.push(config.autonomy);
+    if (config.agent_model) parts.push(config.agent_model);
+    document.getElementById('hdr-sub').textContent = parts.join(' \u00B7 ') || '--';
+
+    // --- Uptime sync ---
+    if (conn.server_uptime_ms != null) {
+      serverUptimeBaseline = conn.server_uptime_ms;
+      clientTimeBaseline = Date.now();
+    }
+
+    // --- Run Summary ---
+    var completed = dag.completed || 0;
+    var total = dag.total_tasks || 0;
+    var failed = dag.failed || 0;
+    var totalWaves = (dag.waves || []).length;
+    var currentWave = dag.current_wave || '--';
+
+    document.getElementById('run-big').textContent = completed + ' / ' + total;
+
+    var pct = total > 0 ? Math.min((completed / total) * 100, 100) : 0;
+    document.getElementById('run-bar').style.width = pct + '%';
+    document.getElementById('run-pct').textContent = Math.round(pct) + '%';
+
+    document.getElementById('wave-text').textContent = 'Wave ' + currentWave + ' of ' + totalWaves;
+
+    // Wave status badge
+    var waveBadge = document.getElementById('wave-badge');
+    var currentWaveObj = null;
+    (dag.waves || []).forEach(function(w) {
+      if (w.number === currentWave) currentWaveObj = w;
+    });
+    var waveStatus = currentWaveObj ? currentWaveObj.status : 'pending';
+    waveBadge.textContent = waveStatus;
+    waveBadge.className = 'badge badge-' + waveStatus;
+
+    // Failure count
+    var failEl = document.getElementById('failure-count');
+    if (failed > 0) {
+      failEl.textContent = '\u26A0 ' + failed + ' failed';
+      failEl.className = 'failure-count has-failures';
+    } else {
+      failEl.textContent = '0 failed';
+      failEl.className = 'failure-count';
+    }
+
+    // --- Activity Log ---
+    var actLog = document.getElementById('activity-log');
+    if (history.length === 0) {
+      actLog.innerHTML = '<div class="empty-state">No events yet</div>';
+    } else {
+      // Rebuild with most recent first (prepend order)
+      var actHtml = '';
+      for (var hi = history.length - 1; hi >= 0; hi--) {
+        var entry = history[hi];
+        actHtml += '<div class="activity-entry">' +
+          '<span class="activity-time">' + escapeHtml(entry.time || '') + '</span>' +
+          '<span class="activity-text">' + escapeHtml(entry.text || '') + '</span>' +
+          '</div>';
+      }
+      actLog.innerHTML = actHtml;
+    }
+    prevHistoryLen = history.length;
+
+    // --- DAG ---
+    var taskMap = {};
+    tasks.forEach(function(t) { taskMap[t.id] = t; });
+    var waves = dag.waves || [];
+    var dagEl = document.getElementById('dag-container');
+
+    if (waves.length === 0 && tasks.length === 0) {
+      dagEl.innerHTML = '<div class="empty-state">Waiting for data...</div>';
+    } else {
+      var dagHtml = '';
+      waves.forEach(function(wave) {
+        var ws = wave.status || 'pending';
+        var isCollapsed = (ws === 'complete') ? ' collapsed' : '';
+        dagHtml += '<div class="wave-section' + isCollapsed + '" data-wave-status="' + escapeHtml(ws) + '">';
+
+        // Wave header
+        dagHtml += '<div class="wave-header">';
+        dagHtml += '<div class="wave-line wave-line-' + escapeHtml(ws) + '"></div>';
+        dagHtml += '<span class="wave-label">Wave ' + wave.number + '</span>';
+        dagHtml += '<span class="badge badge-' + escapeHtml(ws) + '">' + escapeHtml(ws) + '</span>';
+        dagHtml += '<div class="wave-line wave-line-' + escapeHtml(ws) + '"></div>';
+        dagHtml += '</div>';
+
+        // Task row
+        dagHtml += '<div class="task-row">';
+        wave.tasks.forEach(function(taskId) {
+          var t = taskMap[taskId];
+          if (!t) return;
+          var s = t.status || 'pending';
+          var icon = taskIcon(s);
+          var hasDeps = (t.depends_on && t.depends_on.length > 0) || (t.blocks && t.blocks.length > 0);
+
+          dagHtml += '<div class="task-card ' + escapeHtml(s) + '">';
+
+          // Accent bar for running
+          if (s === 'running') {
+            dagHtml += '<div class="accent-bar"></div>';
+          }
+
+          dagHtml += '<div class="task-card-id">' + escapeHtml(displayId(taskId)) + '</div>';
+          dagHtml += '<div class="task-card-icon">' + icon + '</div>';
+          dagHtml += '<div class="task-card-title">' + escapeHtml(t.title || '') + '</div>';
+
+          if (hasDeps) {
+            dagHtml += '<div class="task-card-divider"></div>';
+            if (t.depends_on && t.depends_on.length > 0) {
+              dagHtml += '<div class="task-card-deps">depends on: ' +
+                t.depends_on.map(function(d) { return escapeHtml(displayId(d)); }).join(', ') + '</div>';
+            }
+            if (t.blocks && t.blocks.length > 0) {
+              dagHtml += '<div class="task-card-deps">blocks: ' +
+                t.blocks.map(function(b) { return escapeHtml(displayId(b)); }).join(', ') + '</div>';
+            }
+          }
+
+          dagHtml += '</div>';
+        });
+        dagHtml += '</div>';
+        dagHtml += '</div>';
+      });
+      dagEl.innerHTML = dagHtml;
+
+      // Click wave headers to toggle collapse
+      dagEl.querySelectorAll('.wave-header').forEach(function(header) {
+        header.addEventListener('click', function() {
+          header.parentElement.classList.toggle('collapsed');
+        });
+      });
+
+      // Auto-scroll to the active wave (running > ready > last complete)
+      var activeWave = dagEl.querySelector('[data-wave-status="running"]') ||
+                       dagEl.querySelector('[data-wave-status="ready"]');
+      if (!activeWave) {
+        var completeWaves = dagEl.querySelectorAll('[data-wave-status="complete"]');
+        if (completeWaves.length > 0) activeWave = completeWaves[completeWaves.length - 1];
+      }
+      if (activeWave) {
+        activeWave.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    // --- Token Budget ---
+    var usedTokens = runTotal.total_tokens || 0;
+    document.getElementById('tok-used').textContent = fmtAbbrev(usedTokens);
+    var budgetTokens = runTotal.total_budget || 0;
+    document.getElementById('tok-total').textContent = fmtComma(usedTokens) + ' / ' + fmtComma(budgetTokens) + ' tokens';
+
+    var budgetPct = budgetTokens > 0 ? (usedTokens / budgetTokens) * 100 : 0;
+    var budgetPctClamped = Math.min(budgetPct, 100);
+    var bColor = barColor(budgetPct);
+
+    var budgetBar = document.getElementById('budget-bar');
+    budgetBar.style.width = budgetPctClamped + '%';
+    budgetBar.className = 'budget-bar-fill bg-' + bColor;
+
+    var budgetPctEl = document.getElementById('budget-pct');
+    budgetPctEl.textContent = Math.round(budgetPct) + '%';
+    budgetPctEl.className = 'budget-pct color-' + bColor;
+
+    var budgetWarn = document.getElementById('budget-warn');
+    budgetWarn.style.display = budgetPct >= 100 ? 'block' : 'none';
+
+    // --- Per-Task Tokens ---
+    var perTaskEl = document.getElementById('per-task-list');
+    var taskIds = Object.keys(tokenTasks);
+
+    // Sort by budget_used_pct descending
+    taskIds.sort(function(a, b) {
+      var pctA = tokenTasks[a].budget_used_pct || 0;
+      var pctB = tokenTasks[b].budget_used_pct || 0;
+      return pctB - pctA;
+    });
+
+    if (taskIds.length === 0) {
+      perTaskEl.innerHTML = '<div class="empty-state">No task data yet</div>';
+    } else {
+      var ptHtml = '';
+      taskIds.forEach(function(tid) {
+        var tk = tokenTasks[tid];
+        var tPct = tk.budget_used_pct != null ? tk.budget_used_pct : 0;
+        var tColor = barColor(tPct);
+        var barW = Math.min(tPct, 100);
+        var retries = tk.retries || 0;
+        var dur = tk.duration_ms != null ? fmtDuration(tk.duration_ms) : '--';
+        var retryBadge = retries > 0 ? ' <span class="retry-badge">\u21BA' + retries + '</span>' : '';
+
+        ptHtml += '<div class="per-task-row">';
+        ptHtml += '<div class="per-task-top">';
+        ptHtml += '<span class="per-task-title">' + escapeHtml(tk.title || '') + '</span>';
+        ptHtml += '<span class="per-task-pct color-' + tColor + '">' + Math.round(tPct) + '%</span>';
+        ptHtml += '</div>';
+        ptHtml += '<div class="per-task-meta">' + escapeHtml(displayId(tid)) + retryBadge +
+          ' \u00B7 ' + fmtComma(tk.total_tokens || 0) + ' / ' + fmtComma(tk.budget || 0) +
+          ' \u00B7 ' + dur + '</div>';
+        ptHtml += '<div class="per-task-bar-wrap"><div class="per-task-bar-fill bg-' + tColor + '" style="width:' + barW + '%"></div></div>';
+        ptHtml += '</div>';
+      });
+      perTaskEl.innerHTML = ptHtml;
+    }
+  }
+
+  // ===== SSE Connection =====
+
+  function connect() {
+    var source = new EventSource('/events');
+
+    source.onopen = function() {
+      document.getElementById('status-dot').classList.add('connected');
+      document.getElementById('status-label').textContent = 'CONNECTED';
+    };
+
+    source.onmessage = function(event) {
+      try {
+        var state = JSON.parse(event.data);
+        render(state);
+      } catch (e) {
+        // Ignore parse errors
+      }
+    };
+
+    source.onerror = function() {
+      document.getElementById('status-dot').classList.remove('connected');
+      document.getElementById('status-label').textContent = 'DISCONNECTED';
+    };
+  }
+
+  // ===== Init =====
+  startUptimeTimer();
+  connect();
+
+})();
+</script>
+
+</body>
+</html>

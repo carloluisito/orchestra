@@ -1,0 +1,17 @@
+{
+  "name": "orchestra-local",
+  "owner": {
+    "name": "Carlo"
+  },
+  "metadata": {
+    "description": "Distribution marketplace for the Orchestra plugin — context-optimized task orchestration for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "orchestra",
+      "description": "Context-optimized task orchestration for AI agents",
+      "version": "1.0.0",
+      "source": "./"
+    }
+  ]
+}
