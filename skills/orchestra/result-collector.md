@@ -28,6 +28,15 @@ The Result Collector runs immediately after every sub-agent dispatch returns. Th
 
 Read the agent's full output and classify it into exactly one of four outcome types. Evaluate them in this order — use the first one that matches.
 
+**Verifier input.** If the Dispatcher handed off with a verifier verdict attached (this happens only for `evidence: true` tasks after Phase 4's Evidence Verification ran), treat that verdict as authoritative for the outcome classification below:
+
+- Verifier `pass` + `was_not_applicable: false` → classify as `success` (skip the agent-narrative-based detection; trust the verifier).
+- Verifier `pass` + `was_not_applicable: true` → classify as `success`, note internally that `verification_status: skipped` (not `passed`).
+- Verifier `fail` (after retries exhausted) → classify as `soft_failure`. Use the verifier's `reason` as the unmet-criteria description.
+- Verifier `inconclusive` (after retries exhausted) → classify as `soft_failure`. Use "verifier inconclusive: {reason}" as unmet-criteria.
+
+When a verifier verdict is present, the agent-narrative-based classification (Hard Failure / Scope Conflict / Soft Failure / Success below) is still used as a secondary check — if the narrative classification disagrees with the verifier (e.g., narrative says Hard Failure but verifier said Pass), take the more pessimistic of the two. Verifier pass + narrative hard_failure → classify as `soft_failure` and log both signals to history.
+
 ### Hard Failure
 
 Assign `hard_failure` if **any** of the following are true:
@@ -140,6 +149,16 @@ Change the `status` field:
 - `hard_failure` outcome -> `status: failed`
 - `scope_conflict` outcome -> `status: failed`
 
+Also update `verification_status` based on the verification path the Dispatcher took:
+
+- If the task had `evidence: false` — set `verification_status: n/a`.
+- If the Verifier ran and returned `pass` with `was_not_applicable: false` — set `verification_status: passed`.
+- If the Verifier ran and returned `pass` with `was_not_applicable: true` — set `verification_status: skipped`.
+- If the Verifier ran and ultimately failed (retries exhausted with `fail` or `inconclusive`) — set `verification_status: failed`.
+- If the user chose "skip verification" under Case F (infrastructure unavailable) — set `verification_status: skipped`.
+- If no verifier was involved because the work agent produced `hard_failure` before reaching verification — set `verification_status: failed` (treated as conservatively failed since no evidence was validated).
+- If Step 2's pessimistic override fired (narrative `hard_failure` while verifier returned `pass`) — override any other rule above and set `verification_status: failed`. The narrative-based failure takes precedence over the verifier's accepted claim.
+
 ### Populate the Result Section
 
 Replace the empty `## Result` section with the following fields:
@@ -224,6 +243,16 @@ Only if no existing hook data is found, use the heuristic fallback:
    - `total_tokens` = sum of all tasks' `total_tokens`.
    - `total_budget` = sum of all tasks' `budget`.
 4. Write the updated JSON back to `.orchestra/token-usage.json`.
+
+### 4a. Sum Verifier Tokens Into run_total
+
+After the work agent's token accounting is written, sum verifier tokens across all tasks. Verifier entries are written by the Verifier skill itself under `tasks.{task_id}.verifier` — this subsection only ensures `run_total.verifier_tokens` stays in sync.
+
+1. Iterate over all entries in `tasks`. For each task that has a `verifier` subkey, sum the `total_tokens` values.
+2. Write the sum to `run_total.verifier_tokens`.
+3. If no task has a `verifier` entry yet, set `run_total.verifier_tokens` to `0`.
+
+`verifier_tokens` is tracked separately from `total_tokens` (which represents work-agent tokens). The reason: verifier tokens are Orchestra-introduced overhead, not user-specified task work. Showing them distinctly in `token-usage.json` makes verification cost visible without polluting the per-task budget calculations.
 
 ### 5. Handle Retries
 

@@ -171,7 +171,7 @@ This allows high-risk or sensitive tasks to require explicit approval even in ot
 
 For each task approved for dispatch, assemble its sub-agent prompt.
 
-1. **Read `skills/orchestra/context-curator.md`.** Follow the complete assembly procedure defined there (steps P1 through P10). Do not duplicate the Context Curator's logic here — read and execute the instructions in that document.
+1. **Read `skills/orchestra/context-curator.md`.** Follow the complete assembly procedure defined there (steps P1 through P11). Do not duplicate the Context Curator's logic here — read and execute the instructions in that document.
 
 2. **Pass these inputs to the Context Curator process:**
    - The task file path: `.orchestra/tasks/{TASK_ID}.md`
@@ -298,6 +298,52 @@ When dispatching multiple agents in parallel:
 - Issue all Agent tool calls together so they run concurrently.
 - Do not wait for one agent to finish before dispatching the next within the same batch.
 - The loop will collect all results in Step 7 before proceeding.
+
+---
+
+### Evidence Verification (new pipeline stage)
+
+After the work agent returns and before the Result Collector runs, check whether evidence verification is required.
+
+1. **Read the task's `evidence` field** from `.orchestra/tasks/NNN-slug.md` frontmatter.
+
+2. **If `evidence: false`** — skip verification entirely. Set the task frontmatter field `verification_status: n/a`. Proceed to the Result Collector as normal.
+
+3. **If `evidence: true`** — invoke the Verifier skill (`skills/orchestra/verifier.md`). Pass:
+   - The task ID and slug.
+   - The path to the task file.
+   - The full returned output of the work agent (for NOT_APPLICABLE detection).
+   - The work agent's one-paragraph summary (for the verifier's "agent's claim" section).
+
+4. **Consume the Verifier's returned object:**
+
+   | Verdict | `was_not_applicable` | Action | `verification_status` |
+   |---|---|---|---|
+   | `pass` | `false` | Proceed to Result Collector normally. | `passed` |
+   | `pass` | `true` | Proceed to Result Collector. Agent's NOT_APPLICABLE claim was accepted. | `skipped` |
+   | `fail` | either | See step 5 below. | determined by retry outcome (see Result Collector Step 5 — after retries exhausted: `failed`) |
+   | `inconclusive` | either | See step 5 below. | determined by retry outcome (see Result Collector Step 5 — after retries exhausted: `failed`) |
+
+5. **On `fail` or `inconclusive`:**
+
+   a. **Check retries remaining.** Read the task's `retry_count` field (the same counter used by standard Retry Mechanics). Compare against `max_retries` from `.orchestra/config.md`.
+
+   b. **If retries remain:**
+      - Archive the current `.orchestra/evidence/NNN-slug/` contents to `.orchestra/evidence/NNN-slug/attempt-{N}/` (where N is the number of prior archived attempts plus one; the first archive is `attempt-1`).
+      - Increment the task's `retry_count` field (same counter as standard Retry Mechanics).
+      - Generate the `## Previous Attempt` retry-context block by invoking the Result Collector's Retry Context Generation procedure for this task. Include file-modified list from the archived attempt.
+      - Re-dispatch the work agent via the Context Curator. Pass: (a) the `verification_feedback` field containing the verifier's `reason` string (Context Curator injects it via P8b), (b) the `## Previous Attempt` retry-context block (Context Curator includes it alongside P8b feedback so the retry agent knows what files exist).
+      - After the re-dispatched agent returns, loop back to step 1 of this Evidence Verification stage.
+
+   c. **If retries exhausted:**
+      - Set `verification_status: failed`.
+      - Hand off to Result Collector with outcome `soft_failure` and the verifier's reason attached as `unmet_criteria`. This outcome flows through the Dispatcher's standard failure-handling rules. If the task has `fallback: true`, the Fallback Engine will be invoked as part of that standard flow; otherwise, the task is marked failed and its dependents remain blocked.
+
+6. **Record `verification_status` in the task frontmatter** before handing to Result Collector, regardless of outcome.
+
+### Infrastructure-failure escalation (Case F)
+
+If at any point during Evidence Verification the Verifier itself cannot be dispatched (Agent tool error during verifier invocation, image attachment unrecoverable, verifier sub-agent fails after its own retry in `full_auto` AND you cannot treat as `inconclusive` because the failure was environmental), **always pause the run and ask the user, regardless of autonomy mode.** The Verifier skill's Error Handling section specifies the exact prompt to show. Do not auto-pass and do not silently mark `soft_failure` — this is an infrastructure-failure case, not a result-quality case.
 
 ---
 

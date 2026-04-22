@@ -8,6 +8,9 @@ token_budget: "{{TOKEN_BUDGET}}"
 priority: "{{PRIORITY|medium}}"
 autonomy: "{{AUTONOMY}}"
 target_repo: "{{TARGET_REPO|}}"
+retry_count: "{{RETRY_COUNT|0}}"
+evidence: {{EVIDENCE|true}}
+verification_status: pending
 ---
 
 ## Objective

@@ -159,11 +159,31 @@ Create 1-3 tasks per component:
 
 For each task, fill in:
 - `id`, `title`, `status: pending`, `depends_on`, `blocks`, `token_budget`, `priority`.
+- `retry_count: 0` — always start at 0. The counter increments only on retries.
+- `evidence` — see "Determining the evidence flag" below. Always substitute the `{{EVIDENCE}}` template variable with the unquoted literal `true` or `false` (not a quoted string) so the frontmatter renders a YAML boolean.
+- `verification_status: pending` — always pending at creation; the Verifier sets the terminal value.
 - `objective` — a single sentence describing what the task accomplishes.
 - `spec_sections` — which spec sections are relevant.
 - `relevant_files` — infer likely file paths from the component description.
 - `upstream_tasks` — same as `depends_on`.
 - `acceptance_criteria` — 2-5 criteria derived from the spec.
+
+### Determining the evidence flag
+
+Every task must have `evidence: true` or `evidence: false` in its frontmatter. The Verifier pipeline stage uses this to decide whether to run verification after the task's work agent returns.
+
+**Default to `evidence: true`** for any task that:
+- Produces executable code (functions, endpoints, components, classes, migrations, scripts).
+- Modifies code that has any observable runtime behavior.
+- Touches UI, API contracts, data flow, or user-visible flows.
+
+**Set `evidence: false` ONLY** when the task is one of these narrow cases:
+- Pure documentation (README changes, doc comments, design notes).
+- Simple file renames with no code changes inside the renamed files.
+- Config changes that do not affect runtime behavior (e.g., editor config, .gitignore entries, linter rule tweaks that don't affect output).
+- Dependency version bumps with no behavior change.
+
+**When in doubt, choose `evidence: true`.** A false positive (task that didn't need evidence gets verified anyway and passes trivially) is cheap. A false negative (real drift slips through unverified) is expensive.
 
 ### B5. Scan Existing Codebase
 
@@ -357,6 +377,7 @@ If two tasks list the same file in `relevant_files` and one creates it while the
 
 ### Q6. Token Budgets
 Every task has a `token_budget` value greater than 0. If a task is missing a budget, assign the default from config.
+Every task has an `evidence` field set to exactly `true` or `false`. No task may be missing this field or have a non-boolean value. If a task's evidence flag is ambiguous, re-check against the rules in "Determining the evidence flag" and default to `true`.
 
 ---
 

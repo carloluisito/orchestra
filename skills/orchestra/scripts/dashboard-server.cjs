@@ -176,10 +176,19 @@ function readState() {
       const taskFiles = fs.readdirSync(tasksDir).filter(f => f.endsWith('.md')).sort();
       state.tasks = taskFiles.map(f => {
         const fm = parseFrontmatter(fs.readFileSync(path.join(tasksDir, f), 'utf-8'));
+        let verification_status = fm.verification_status;
+        if (!verification_status || verification_status === 'pending') {
+          if (fm.evidence === false || fm.evidence === 'false') {
+            verification_status = 'n/a';
+          } else {
+            verification_status = 'pending';
+          }
+        }
         return {
           id: normalizeId(fm.id || f.replace('.md', '')),
           title: fm.title || f.replace('.md', ''),
           status: fm.status || 'pending',
+          verification_status: verification_status,
           depends_on: Array.isArray(fm.depends_on) ? fm.depends_on.map(normalizeId) : [],
           blocks: Array.isArray(fm.blocks) ? fm.blocks.map(normalizeId) : []
         };
