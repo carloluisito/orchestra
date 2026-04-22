@@ -18,6 +18,7 @@ You receive the following when assembling a prompt:
 2. **Config** — the `.orchestra/config.md` file containing run-level defaults.
 3. **Spec** — the spec or requirements document in `.orchestra/input/` (if one exists).
 4. **Upstream task files** — the task files for any tasks listed in the current task's `upstream_tasks` field.
+5. **Verification feedback** (optional, string) — passed by the Dispatcher when this is a retry after a failed verifier verdict. Empty on first attempt. Used by P8b to append the `## Verification Feedback` block.
 
 Read the task file first. Everything else you read is determined by what the task file contains.
 
@@ -357,7 +358,60 @@ If `relevant_files` is non-empty: read each file or directory and format the con
 
 Run the token budget enforcement procedure (Steps 1-4 above). Trim as needed.
 
-### P9. Final Validation
+### P8b. Append Verification Feedback (when provided)
+
+If the Dispatcher passed a `verification_feedback` string (this happens on retry after a failed verifier verdict), append this block at the end of the assembled prompt (after P8 budget enforcement). The Dispatcher will prepend `## Previous Attempt` before the Context Curator's output in the final composed prompt, so the final ordering will be: Previous Attempt → Context Curator prompt → Verification Feedback → Evidence Requirements.
+
+```
+## Verification Feedback
+The previous attempt's evidence was reviewed by an independent verifier. The verifier's reason for not accepting the result:
+
+{verification_feedback}
+
+Your next attempt must address this specific feedback. Produce new evidence at .orchestra/evidence/{NNN-slug}/ (the previous attempt's artifacts have been archived to attempt-{N}/).
+```
+
+### P9. Append Evidence Requirements block (when applicable)
+
+Read the task's `evidence` frontmatter field.
+
+**If `evidence: false`** — skip this step entirely. The assembled prompt does not include an Evidence Requirements block.
+
+**If `evidence: true`** — append the following block as the final section of the assembled prompt, after all other sections (task objective, spec sections, relevant files, upstream summaries, retry context if any). Use this exact text:
+
+````markdown
+```
+━━ EVIDENCE REQUIREMENTS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You MUST produce evidence of working behavior at .orchestra/evidence/{NNN-slug}/.
+
+Choose the evidence form that fits the work:
+- UI changes (rendered pages, components, user flows) — run an E2E test with a
+  headless browser and save a screenshot that clearly shows the feature working.
+  Save as screenshot.png. Save the test command and stdout to test-output.txt.
+- Backend / API / logic changes — run an integration test that exercises the
+  change. Save stdout to test-output.txt and the exit code to exit-code.txt.
+  Include the command you ran in command.txt.
+- Statically-typed language source changes (TypeScript, Go, Rust, Kotlin, Java,
+  Swift, Scala, etc.) — IN ADDITION to the test evidence above, run the
+  project's typecheck/build command (e.g., `npm run build`, `tsc --noEmit`,
+  `go build`, `cargo build`, `./gradlew build`, `swift build`) and save the
+  stdout+stderr to build-output.txt and the exit code to build-exit-code.txt.
+  Discover the build command from package.json scripts, Makefile, or the
+  project's README. A non-zero build exit code fails verification even if
+  runtime tests pass.
+- If this specific task is genuinely not testable despite being flagged
+  evidence=true (e.g. you discovered it's pure structural scaffolding with no
+  observable behavior), start your reply with exactly this line:
+  EVIDENCE: NOT_APPLICABLE — {one-sentence reason}
+  A separate verifier will evaluate whether your justification is valid.
+
+Your own self-report is not sufficient. A verifier will inspect your evidence.
+```
+````
+
+Substitute `{NNN-slug}` with the task's filename stem (e.g., for `.orchestra/tasks/003-add-auth.md`, use `003-add-auth`).
+
+### P10. Final Validation
 
 Before returning the assembled prompt, verify:
 
@@ -368,7 +422,7 @@ Before returning the assembled prompt, verify:
 5. **Estimated tokens are at or below target** (80% of budget), or an overflow warning is attached.
 6. **Section separators** use the `━━ SECTION NAME ━━━` format consistently.
 
-### P10. Return the Prompt
+### P11. Return the Prompt
 
 Return the fully assembled prompt as a single string. This string is what gets passed to the sub-agent as its system-level context.
 

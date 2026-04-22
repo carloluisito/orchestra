@@ -462,6 +462,13 @@
     * { animation: none !important; transition: none !important; }
   }
 
+  /* ===== Verification Status ===== */
+  .verification-passed  { color: #2e7d32; }   /* green */
+  .verification-failed  { color: #c62828; }   /* red */
+  .verification-skipped { color: #f57c00; }   /* orange */
+  .verification-pending { color: #757575; }   /* gray */
+  .verification-na      { color: #bdbdbd; }   /* light gray, for n/a */
+
   /* ===== Empty state ===== */
   .empty-state {
     color: #484f58;
@@ -542,6 +549,7 @@
         </div>
       </div>
       <div class="token-total" id="tok-total">0 / 0 tokens</div>
+      <div class="token-total" id="tok-verifier" style="color:#8b949e;font-size:11px;">Verifier overhead: 0 tokens</div>
       <div class="budget-bar-wrap">
         <div class="budget-bar-fill" id="budget-bar" style="width:0%"></div>
       </div>
@@ -779,6 +787,12 @@
           dagHtml += '<div class="task-card-icon">' + icon + '</div>';
           dagHtml += '<div class="task-card-title">' + escapeHtml(t.title || '') + '</div>';
 
+          if (t.verification_status) {
+            var vs = t.verification_status;
+            var vsCls = 'verification verification-' + (vs === 'n/a' ? 'na' : vs);
+            dagHtml += '<div class="' + vsCls + '" style="font-size:11px;margin-top:3px;">' + escapeHtml(vs) + '</div>';
+          }
+
           if (hasDeps) {
             dagHtml += '<div class="task-card-divider"></div>';
             if (t.depends_on && t.depends_on.length > 0) {
@@ -822,6 +836,7 @@
     document.getElementById('tok-used').textContent = fmtAbbrev(usedTokens);
     var budgetTokens = runTotal.total_budget || 0;
     document.getElementById('tok-total').textContent = fmtComma(usedTokens) + ' / ' + fmtComma(budgetTokens) + ' tokens';
+    document.getElementById('tok-verifier').textContent = 'Verifier overhead: ' + fmtComma(runTotal.verifier_tokens || 0) + ' tokens';
 
     var budgetPct = budgetTokens > 0 ? (usedTokens / budgetTokens) * 100 : 0;
     var budgetPctClamped = Math.min(budgetPct, 100);

@@ -354,3 +354,25 @@ These are the component files that this skill reads on demand during execution. 
 | Result Collector | `skills/orchestra/result-collector.md` | After each sub-agent returns — processing and recording results |
 | Fallback Engine | `skills/orchestra/fallback-engine.md` | When a task has `fallback: true` or fails after max retries |
 | Refiner | `skills/orchestra/refiner.md` | Step 3c of New Run — classifying and enriching input before decomposition |
+| Verifier | `skills/orchestra/verifier.md` | Evidence verification after work agent returns (Phase 4) |
+
+---
+
+## How It Works
+
+Orchestra's execution loop consists of six stages:
+
+1. **Decompose** — input is broken into atomic tasks with dependency edges.
+2. **Curate** — each task gets a focused prompt from relevant context within budget.
+3. **Dispatch** — independent tasks run as parallel sub-agents.
+4. **Verify** — for every task with `evidence: true`, a fresh sub-agent reviews the evidence artifacts the work agent produced and returns a pass/fail/inconclusive verdict. Failed verdicts trigger retry with feedback. Infrastructure failures pause and ask the user regardless of autonomy mode.
+5. **Collect** — results and verdicts are captured, summarized for downstream tasks.
+6. **Repeat** — until all tasks complete.
+
+---
+
+### Per-task evidence verification
+
+Every task the Decomposer creates gets an `evidence: true | false` frontmatter field. When `evidence: true`, the task's work agent must produce evidence artifacts (screenshots for UI, test output for backend) into `.orchestra/evidence/NNN-slug/`, and a separate Verifier sub-agent reviews the evidence before the task is marked done. The Decomposer sets `evidence: false` only for tasks that have no observable runtime behavior (pure docs, file renames, behavior-less config changes).
+
+Verifier token usage is tracked separately from work-agent token usage and does not count against per-task `token_budget`. It is surfaced in `.orchestra/token-usage.json` as `run_total.verifier_tokens`.
