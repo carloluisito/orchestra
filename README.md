@@ -64,8 +64,9 @@ After `run`, Orchestra will prompt you interactively for configuration and branc
 1. **Decompose** — input is broken into atomic tasks with dependency edges (a DAG).
 2. **Curate** — each task gets a focused prompt assembled from only the context it needs, within budget.
 3. **Dispatch** — independent tasks run as parallel sub-agents (optionally in isolated git worktrees).
-4. **Collect** — results are captured and summarized for downstream consumers.
-5. **Repeat** — until the DAG completes, with checkpoints for review if enabled.
+4. **Verify** — for tasks marked `evidence: true`, a fresh independent sub-agent validates the work agent's evidence artifacts (screenshots, test output, exit codes, build output) against the task's acceptance criteria. The verdict decides whether to proceed, retry with feedback, or escalate.
+5. **Collect** — results are captured and summarized for downstream consumers.
+6. **Repeat** — until the DAG completes, with checkpoints for review if enabled.
 
 ## Runtime State
 
