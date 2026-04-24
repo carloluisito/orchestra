@@ -1,0 +1,1 @@
+Added profile edit form at /profile/edit with Name and Email fields. Form POSTs to /api/user/profile and redirects to /profile on success with a green success banner. Client-side validation rejects malformed emails before submission. E2E test run saves a screenshot of the successful edit flow to evidence/screenshot.png.

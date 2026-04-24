@@ -292,6 +292,18 @@ For each dispatched task:
    - [{TIME}] {TASK_ID} ({TITLE}) — dispatched to sub-agent. Model: {agent_model}. Wave: {wave_number}.
    ```
 
+4. **Write the heartbeat file.** Write `.orchestra/running/{TASK_ID}.json` with this exact shape:
+   ```json
+   {
+     "started_at": "{ISO 8601 timestamp at dispatch}",
+     "agent_id": "{Agent tool invocation id if available, else the task ID}",
+     "model": "{config.agent_model}",
+     "worktree_path": "{the worktree path if use_worktrees is true, else the resolved target-repo path}",
+     "wave": {wave_number}
+   }
+   ```
+   This heartbeat is the only live signal the dashboard has that a task is in-flight. Without it, running tasks show `0%` for 5–10 minutes and then jump straight to `done`. The Result Collector deletes this file when the task reaches a terminal status (see `result-collector.md` Step 6d). State Manager Operation 7 sweeps orphans as a safety net for crashes.
+
 #### Parallel Dispatch
 
 When dispatching multiple agents in parallel:
@@ -479,7 +491,7 @@ Regardless of autonomy mode, these rules apply:
 
 Prepare for the next iteration.
 
-1. **Propagate readiness.** Follow State Manager Operation 4 (Update DAG After Status Changes) to unlock any tasks whose dependencies are now met. This handles the case where a completed task in this batch unblocks tasks in a later wave.
+1. **Post-batch sync.** Call **State Manager Operation 7: Post-Batch Sync**, passing the batch task IDs and the wave number. Operation 7 is a single call that (a) runs Operation 4 to regenerate `dag.md` counters and status and propagate readiness to newly-unblocked dependents, (b) validates that `token-usage.json` has an entry for every task that just reached a terminal status, (c) appends a batch-summary line to `history.md`, and (d) sweeps orphan heartbeat files from `.orchestra/running/`. **This call is mandatory — do not skip it and do not substitute a direct Operation 4 call.** Skipping Operation 7 is the documented root cause of stale dashboards: frozen `N / {total} tasks complete` counters, per-task token bars stuck at `0 / 80k`, and missing batch entries in `history.md`.
 
 2. **Update wave tracking.** Determine if the current wave is complete:
    - If all tasks in the current wave have status `done` or `failed` (with no retries pending), the wave is complete.
@@ -548,7 +560,7 @@ The Dispatcher orchestrates but does not implement the internal logic of other c
 |----------|------|---------|
 | `skills/orchestra/context-curator.md` | Step 5 | Build sub-agent prompts |
 | `skills/orchestra/result-collector.md` | Step 7, retries | Process agent output, build retry context |
-| `skills/orchestra/state-manager.md` | Steps 1-3, 6, 9 | Read state, update statuses, refresh DAG |
+| `skills/orchestra/state-manager.md` | Steps 1-3, 6, 9 | Read state, update statuses, refresh DAG (Op 4), post-batch sync (Op 7) |
 
 ### Dispatcher Does NOT
 

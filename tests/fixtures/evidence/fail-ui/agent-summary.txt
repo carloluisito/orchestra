@@ -1,0 +1,1 @@
+Added profile edit form at /profile/edit. E2E test passes and the screenshot confirms the feature works.

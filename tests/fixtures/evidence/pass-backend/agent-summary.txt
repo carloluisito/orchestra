@@ -1,0 +1,1 @@
+Added POST /api/users at src/routes/users.ts. Uses bcrypt to hash passwords before storage, strips the hash from the response, and returns 409 on unique-constraint violations. Integration test exercises all three paths and passes.

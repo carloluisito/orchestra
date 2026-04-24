@@ -1,0 +1,3 @@
+EVIDENCE: NOT_APPLICABLE — this task is too complex to test reliably.
+
+I added the profile edit form at /profile/edit with the Name and Email fields as specified. It should work.

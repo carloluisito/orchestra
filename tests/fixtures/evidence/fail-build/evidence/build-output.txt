@@ -1,0 +1,7 @@
+> tsc --noEmit
+
+src/validators/user.ts(14,3): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/validators/user.ts(27,9): error TS7006: Parameter 'rule' implicitly has an 'any' type.
+
+Found 2 errors in 1 file.

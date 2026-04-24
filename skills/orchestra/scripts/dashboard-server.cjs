@@ -92,7 +92,7 @@ function readState() {
       // Parse waves section — handles multiple formats:
       // Format A: "- Wave 1: [T001, T002]" or "- Wave 1: T001, T002" (single-line list items)
       // Format B: "### Wave 1 — done\n- T001: Title — done\n- T002: Title" (heading + sub-items)
-      const wavesSection = dagContent.match(/## Waves\n([\s\S]*?)(?=\n## [^#]|$)/);
+      const wavesSection = dagContent.match(/## Waves\r?\n([\s\S]*?)(?=\r?\n## [^#]|$)/);
       if (wavesSection) {
         const wavesText = wavesSection[1].trim();
         const waves = [];

@@ -1,0 +1,1 @@
+Added src/validators/user.ts exporting validateUser. Added unit test at src/validators/user.test.ts exercising the happy path. Vitest passes all 3 tests.

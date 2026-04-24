@@ -73,6 +73,7 @@ fi
 # ========== Kill Existing Server ==========
 PID_FILE="$ORCHESTRA_DIR/dashboard.pid"
 LOG_FILE="$ORCHESTRA_DIR/dashboard.log"
+INFO_FILE="$ORCHESTRA_DIR/dashboard-info.json"
 
 if [[ -f "$PID_FILE" ]]; then
   OLD_PID=$(cat "$PID_FILE" 2>/dev/null || true)
@@ -86,6 +87,9 @@ if [[ -f "$PID_FILE" ]]; then
   fi
   rm -f "$PID_FILE"
 fi
+
+# Always remove stale info file so the readiness wait below doesn't read old port/url
+rm -f "$INFO_FILE"
 
 # ========== Resolve Owner PID ==========
 # Grandparent of this script: the process that launched the caller

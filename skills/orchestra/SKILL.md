@@ -303,7 +303,11 @@ Execute this flow when the user runs `/orchestra resume`.
    - Last 5 entries from `.orchestra/history.md`.
    - Tasks that are currently ready for dispatch (status `pending` with all dependencies `done`).
 
-5. **Confirm.** Ask the user if they want to resume execution. If they confirm, proceed to **Step 5: Dispatch Loop** (same as New Run). If they decline, stop.
+5. **Confirm.** Ask the user if they want to resume execution. If they decline, stop.
+
+6. **Flip run status to `running`.** Before entering the dispatch loop, read `skills/orchestra/state-manager.md` and follow **Operation 6: Update Config Status** with the new value `running`. This flips `config.md#status` from `paused` back to `running` so the dashboard badge reflects live state. Do not skip this step — without it, the dashboard header stays stuck on `paused` for the entire resumed session even while tasks are dispatching.
+
+7. **Dispatch Loop.** Proceed to **Step 5: Dispatch Loop** (same as New Run).
 
 ---
 

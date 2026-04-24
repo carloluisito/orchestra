@@ -295,6 +295,10 @@ Where:
 - `{OUTCOME}` — one of: `success`, `soft_failure`, `hard_failure`, `scope_conflict`.
 - `{ONE_SENTENCE_SUMMARY}` — the first sentence of the Step 3 summary.
 
+### 6d. Clear the Heartbeat
+
+If `.orchestra/running/{TASK_ID}.json` exists, delete it. This is the signal the dashboard uses to know the task is no longer in-flight. Clear the heartbeat **regardless of outcome** — every terminal status (`success`, `soft_failure`, `hard_failure`, `scope_conflict`) removes the file. The file was created by the Dispatcher at dispatch time (see `dispatcher.md` Step 6, "Update State on Dispatch"). If the file is already missing (crash during previous write, manual cleanup), treat that as success and continue — do not report an error. State Manager Operation 7 runs a safety-net sweep for orphans; do not rely on that sweep in the normal path.
+
 ---
 
 ## Retry Context Generation

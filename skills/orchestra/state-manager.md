@@ -18,6 +18,7 @@ A fully initialized `.orchestra/` directory contains:
   input/               # Original input source (spec, prompt, URL content)
   tasks/               # One file per task: T001.md, T002.md, etc.
   results/             # Full output artifacts from completed tasks
+  running/             # Live heartbeat files for in-flight tasks ({TASK_ID}.json — created on dispatch, deleted on terminal status)
 ```
 
 ---
@@ -30,8 +31,9 @@ Trigger: The user starts a new orchestration run (no existing `.orchestra/` dire
 
 1. **Create the directory structure.** Run:
    ```
-   mkdir -p .orchestra/input .orchestra/tasks .orchestra/results
+   mkdir -p .orchestra/input .orchestra/tasks .orchestra/results .orchestra/running
    ```
+   `.orchestra/running/` holds per-task heartbeat files (`{TASK_ID}.json`) that the Dispatcher writes at dispatch time and the Result Collector deletes when a task reaches a terminal status. The dashboard uses these files to show live in-flight state.
 
 2. **Generate `config.md`** from `skills/orchestra/templates/config-template.md`. Substitute these variables:
    - `{{PROJECT_NAME}}` — infer from the current directory name (the basename of `pwd`).
@@ -112,6 +114,7 @@ After initialization, confirm all these paths exist:
 - `.orchestra/input/` (with at least one file inside)
 - `.orchestra/tasks/` (empty directory)
 - `.orchestra/results/` (empty directory)
+- `.orchestra/running/` (empty directory)
 
 If any are missing, report the error and retry the failed step.
 
@@ -144,6 +147,8 @@ Trigger: The user resumes an existing run (`.orchestra/` directory already exist
    - If the work appears complete (files changed, acceptance criteria met): update the task status to `done` and populate the Result section. Append a note: `> Resumed: marked done — work from previous session detected.`
    - If the work appears incomplete or unclear: reset the task status to `ready`. Append a note: `> Resumed: reset to ready — previous attempt was interrupted.`
    - In either case, append an entry to `history.md` documenting the recovery action.
+
+4b. **Sweep orphan heartbeats.** Scan `.orchestra/running/*.json`. For each heartbeat file whose `{TASK_ID}` is no longer `running` (i.e., the task file now shows `done`, `failed`, `ready`, or `pending` — including the ones just reconciled in step 4), delete the heartbeat file. Append to `history.md`: `- [{TIME}] Resumed: swept {N} orphan heartbeat file(s) from .orchestra/running/.` Without this sweep, the dashboard shows ghost in-flight tasks immediately after resume.
 
 5. **Read the tail of `history.md`.** Read the last 20 lines to understand recent activity and provide context for the current session.
 
@@ -312,7 +317,7 @@ Trigger: When the user asks for progress, or at checkpoint moments between waves
 
 ## Operation 6: Update Config Status
 
-Trigger: When the overall run status changes (e.g., all tasks done, a fatal failure, user pauses).
+Trigger: When the overall run status changes. This includes: all tasks done, a fatal failure, user pauses, or **resume from a paused state** (Resume Flow calls this to flip `paused` → `running` before entering the dispatch loop).
 
 ### Steps
 
@@ -323,6 +328,42 @@ Trigger: When the overall run status changes (e.g., all tasks done, a fatal fail
    ```
    - [{TIME}] Run status changed to {NEW_STATUS}.
    ```
+
+---
+
+## Operation 7: Post-Batch Sync
+
+Trigger: The Dispatcher calls this **exactly once after every dispatch batch finishes** (i.e., after the Result Collector has processed every agent return in the batch, at the start of Step 9 in the Dispatcher loop). This is the ONLY sanctioned way to close out a batch. Do not substitute a direct Operation 4 call — Operation 7 does more than refresh the DAG, and skipping the extra steps is the documented root cause of stale dashboards (`dag.md` counters frozen, `token-usage.json` missing entries for done tasks, `history.md` missing batch summaries).
+
+### Inputs
+
+- `batch` — the list of task IDs that were just dispatched and have now returned.
+- `wave_number` — the wave the batch belonged to.
+
+### Steps
+
+1. **Run Operation 4 (Update DAG After Status Changes).** This refreshes `dag.md`'s task table, wave list, and frontmatter counters (`total_tasks`, `completed`, `failed`, `status`) to match the current on-disk task files. Propagate readiness for any newly-unblocked dependents.
+
+2. **Validate `token-usage.json` entries.** Read `.orchestra/token-usage.json`. For each task ID in `batch` whose status is now terminal (`done` or `failed`):
+   - Confirm an entry exists under `tasks.{TASK_ID}` with a non-zero `total_tokens` value.
+   - If the entry is missing or `total_tokens == 0`, append a warning to `history.md`:
+     ```
+     - [{TIME}] ⚠ token-usage.json missing entry for {TASK_ID} after terminal status — dashboard token bar will be stale. Check Result Collector Step 5b.
+     ```
+   - Do not fabricate usage numbers. The warning is the signal; the fix lives in the Result Collector's token capture path.
+   - After iterating all batch tasks, recompute `run_total` by summing across `tasks` (same procedure as Result Collector Step 5b subsection 3) and write the updated JSON back.
+
+3. **Append a batch summary to `history.md`.** Single line, exact format:
+   ```
+   - [{TIME}] Batch sync — wave {wave_number}: {done_count} done, {failed_count} failed, {still_running_count} still running. DAG counters refreshed.
+   ```
+   `still_running_count` covers tasks from earlier iterations that have not yet returned — read from the current task status map, not from `batch`.
+
+4. **Sweep orphan heartbeats.** Scan `.orchestra/running/*.json`. For each heartbeat file whose `{TASK_ID}` is now at a terminal status (`done`, `failed`) in the task files, delete it. The Result Collector is responsible for deleting heartbeats on the normal path; this sweep is the safety net for crashes or aborted agents.
+
+### Why This Operation Exists
+
+The Dispatcher loop previously called Operation 4 directly and relied on the orchestrator to *remember* to update `token-usage.json`, append a history summary, and clean up heartbeats. Orchestrators forget. Operation 7 consolidates all four post-batch duties into a single call site so forgetting is impossible.
 
 ---
 
