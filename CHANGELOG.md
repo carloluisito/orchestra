@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] - 2026-04-25
+## [1.1.1] - 2026-04-25
 
 ### Fixed
 - **Resume no longer leaves the dashboard badge stuck on `paused`.** The Resume Flow now explicitly calls State Manager Operation 6 to flip `config.md#status` from `paused` back to `running` before entering the dispatch loop. Operation 6's trigger description was also expanded to list resume as a valid caller. (SKILL.md, state-manager.md)

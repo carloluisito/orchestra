@@ -1,7 +1,7 @@
 {
   "name": "orchestra",
   "description": "Context-optimized task orchestration for AI agents. Decomposes complex tasks into a DAG and dispatches focused sub-agents with minimal context prompts.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": {
     "name": "Carlo"
   },
