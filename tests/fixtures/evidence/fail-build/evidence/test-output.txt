@@ -1,0 +1,10 @@
+> vitest run src/validators/user.test.ts
+
+ ✓ src/validators/user.test.ts (3)
+   ✓ validateUser accepts a valid input
+   ✓ validateUser rejects missing email
+   ✓ validateUser rejects malformed email
+
+Test Files  1 passed (1)
+Tests       3 passed (3)
+Duration    0.84s

@@ -1,0 +1,10 @@
+> vitest run api/users.test.ts
+
+ ✓ api/users.test.ts (3)
+   ✓ POST /api/users creates a user and returns 201
+   ✓ POST /api/users with duplicate email returns 409
+   ✓ POST /api/users with malformed body returns 400
+
+Test Files  1 passed (1)
+Tests       3 passed (3)
+Duration    1.42s

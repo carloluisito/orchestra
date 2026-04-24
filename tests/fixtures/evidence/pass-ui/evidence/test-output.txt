@@ -1,0 +1,6 @@
+> playwright test profile-edit.spec.ts
+
+Running 1 test using 1 worker
+  ✓ profile edit form submits and shows success (1.8s)
+
+  1 passed (2.1s)

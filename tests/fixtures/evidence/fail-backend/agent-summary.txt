@@ -1,0 +1,1 @@
+Added POST /api/users at src/routes/users.ts. Integration test passes, endpoint is working.

@@ -1,0 +1,1 @@
+vitest run src/validators/user.test.ts
